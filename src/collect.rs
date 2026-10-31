@@ -7,7 +7,7 @@ use std::fmt;
 use std::io::ErrorKind;
 use std::process::Command;
 
-use chrono::{DateTime, Days, Months, NaiveDate};
+use chrono::{DateTime, Days, NaiveDate};
 use serde_json::Value;
 
 use crate::history::{
@@ -70,8 +70,8 @@ const CALENDAR_QUERY: &str = "query($login: String!, $from: DateTime!, $to: Date
 /// languages, and daily contribution counts from the day it was created through the
 /// latest date GitHub reports.
 ///
-/// GitHub limits each calendar request to a year, so the calendar is requested a year at
-/// a time. `today` is the current UTC date and its day is still in progress, so the
+/// GitHub returns at most 365 days per calendar request, dropping the earliest days of a
+/// longer window, so the calendar is requested 365 days at a time. `today` is the current UTC date and its day is still in progress, so the
 /// requests end the day before and a run just after midnight observes the day that just
 /// ended. Within that bound the observation date comes from GitHub. An account created
 /// today has no complete day yet and gets an empty history observed through yesterday.
@@ -210,7 +210,7 @@ fn read_repository(
     })
 }
 
-/// Request the calendar a year at a time through the last complete day, keeping only days
+/// Request the calendar 365 days at a time through the last complete day, keeping only days
 /// inside each requested window and on or after the account's creation date.
 fn collect_contribution_history(
     github: &impl GraphqlClient,
@@ -231,8 +231,8 @@ fn collect_contribution_history(
     let mut window_start = created_on;
     while window_start <= last_complete_day {
         let window_end = window_start
-            .checked_add_months(Months::new(12))
-            .and_then(|next_year| next_year.pred_opt())
+            // A calendar year containing February 29 is 366 days, one more than GitHub returns.
+            .checked_add_days(Days::new(364))
             .expect("calendar windows stay within supported dates")
             .min(last_complete_day);
         let from = format!("{window_start}T00:00:00Z");

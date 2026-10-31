@@ -85,6 +85,37 @@ fn calendar_is_requested_one_year_at_a_time_from_account_creation() {
 }
 
 #[test]
+fn a_window_crossing_february_29_keeps_its_first_day() {
+    let github = RecordedGitHub {
+        account: json!({ "databaseId": 4242, "createdAt": "2023-07-15T10:15:00Z" }),
+        // GitHub returns at most 365 days per request and drops the earliest days beyond that.
+        calendar: |from, to| {
+            let mut response = calendar_response(from, to, |_| true);
+            let first_returned = to - Days::new(364);
+            for calendar_week in response["user"]["contributionsCollection"]["contributionCalendar"]
+                ["weeks"]
+                .as_array_mut()
+                .unwrap()
+            {
+                calendar_week["contributionDays"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|calendar_day| {
+                        date(calendar_day["date"].as_str().unwrap()) >= first_returned
+                    });
+            }
+            Ok(response)
+        },
+        ..RecordedGitHub::new()
+    };
+    let account_snapshot = collect_account_snapshot(&github, LOGIN, date("2024-08-01")).unwrap();
+
+    let contribution_history = account_snapshot.contribution_history.unwrap();
+    assert_eq!(contribution_history.days[0].date, date("2023-07-15"));
+    assert_eq!(contribution_history.days.len(), 383);
+}
+
+#[test]
 fn the_day_in_progress_is_left_out_even_when_github_reports_it() {
     let github = RecordedGitHub {
         calendar: |from, _| Ok(calendar_response(from, date("2026-01-03"), |_| true)),
